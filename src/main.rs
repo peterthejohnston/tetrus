@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::path;
 use std::time::Duration;
 
-type Point2 = ggez::nalgebra::Point2<f32>;
-type Point2u8 = ggez::nalgebra::Point2<u8>;
+type Point2f32 = ggez::nalgebra::Point2<f32>;
+type Point2 = ggez::nalgebra::Point2<i8>;
 type Vec2 = ggez::nalgebra::Vector2<f32>;
 
 const TILE_SIZE: f32 = 20.0;
@@ -44,17 +44,17 @@ enum TetType {
 
 struct Tet {
     tet_type: TetType,
-    blocks: [Point2u8; 4],
-    pos: Point2u8,
+    blocks: [Point2; 4],
+    pos: Point2,
 }
 
 impl Tet {
-    fn new(tet_type: TetType, pos: Point2u8) -> Self {
+    fn new(tet_type: TetType, pos: Point2) -> Self {
         Self {
             tet_type,
             pos,
             blocks: match tet_type {
-                TetType::I => [[0, 0].into(), [1, 0].into(), [2, 0].into(), [3, 0].into()],
+                TetType::I => [[0, 1].into(), [1, 1].into(), [2, 1].into(), [3, 1].into()],
                 TetType::J => [[0, 0].into(), [0, 1].into(), [1, 1].into(), [2, 1].into()],
                 TetType::L => [[0, 1].into(), [1, 1].into(), [2, 1].into(), [2, 0].into()],
                 TetType::O => [[0, 0].into(), [0, 1].into(), [1, 0].into(), [1, 1].into()],
@@ -65,21 +65,21 @@ impl Tet {
         }
     }
 
-    fn left(&self) -> u8 {
+    fn left(&self) -> i8 {
         self.blocks.iter().min_by(|b1, b2| b1.x.cmp(&b2.x)).unwrap().x
     }
 
-    fn right(&self) -> u8 {
+    fn right(&self) -> i8 {
         self.blocks.iter().max_by(|b1, b2| b1.x.cmp(&b2.x)).unwrap().x
     }
 
-    fn bottom(&self) -> u8 {
+    fn bottom(&self) -> i8 {
         self.blocks.iter().max_by(|b1, b2| b1.y.cmp(&b2.y)).unwrap().y
     }
 
     fn fall(&mut self, tets: &Tets) -> bool {
         for block in self.blocks.iter() {
-            if self.pos.y + block.y + 1 >= TILES_HIGH as u8 ||
+            if self.pos.y + block.y + 1 >= TILES_HIGH as i8 ||
                tets.at(self.pos.y + block.y + 1, self.pos.x + block.x).is_some() {
                 return false;
             }
@@ -100,12 +100,36 @@ impl Tet {
 
     fn move_right(&mut self, tets: &Tets) {
         for block in self.blocks.iter() {
-            if self.pos.x + block.x + 1 >= TILES_WIDE as u8 ||
+            if self.pos.x + block.x + 1 >= TILES_WIDE as i8 ||
                tets.at(self.pos.y + block.y, self.pos.x + block.x + 1).is_some() {
                 return;
             }
         }
         self.pos.x += 1;
+    }
+
+    fn rotate_c(&mut self, tets: &Tets) {
+        // TODO: check if can rotate
+        // if not, kick?
+        match self.tet_type {
+            TetType::O => (),
+            TetType::I => {
+                // rotate around center of a 4x4
+                for block in self.blocks.iter_mut() {
+                    let y = block.x;
+                    block.x = (3 - block.y as i8).abs() as i8;
+                    block.y = y;
+                }
+            },
+            _ => {
+                // rotate around center of a 3x3
+                for block in self.blocks.iter_mut() {
+                    let y = block.x;
+                    block.x = (2 - block.y as i8).abs() as i8;
+                    block.y = y;
+                }
+            }
+        }
     }
 }
 
@@ -120,17 +144,17 @@ impl Default for Tets {
 }
 
 impl Tets {
-    fn at(&self, row: u8, col: u8) -> &Option<TetType> {
+    fn at(&self, row: i8, col: i8) -> &Option<TetType> {
         self.tets.get(row as usize)
             .map_or(&None, |row| row.get(col as usize)
             .map_or(&None, |block| block))
     }
 
-    fn set(&mut self, row: u8, col: u8, val: TetType) {
+    fn set(&mut self, row: i8, col: i8, val: TetType) {
         self.tets[row as usize][col as usize] = Some(val);
     }
 
-    fn clear(&mut self, row: u8) {
+    fn clear(&mut self, row: i8) {
         self.tets[row as usize] = [None; TILES_WIDE];
     }
 
@@ -148,6 +172,7 @@ enum Mode {
 struct Game {
     assets: Assets,
     current_tet: Tet,
+    has_tet: bool,
     tets: Tets,
     fall_timer: Duration,
     fall_mode: Mode,
@@ -155,12 +180,13 @@ struct Game {
 
 impl Game {
     const NORMAL_INTERVAL: Duration = Duration::from_secs(1);
-    const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(200);
+    const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(70);
 
     fn new(ctx: &mut Context) -> GameResult<Self> {
         let game = Game {
             assets: Assets::load(ctx)?,
-            current_tet: Tet::new(TetType::S, Point2u8::new(3, 0)),
+            current_tet: Tet::new(TetType::S, Point2::new(3, 0)),
+            has_tet: true,
             tets: Tets::default(),
             fall_timer: Self::NORMAL_INTERVAL,
             fall_mode: Mode::Normal,
@@ -177,7 +203,13 @@ impl Game {
                 self.current_tet.tet_type
             );
         }
-        self.current_tet = Tet::new(TetType::S, Point2u8::new(3, 4));
+        self.has_tet = false;
+        // TODO: set a timer to spawn new random tet
+    }
+
+    fn spawn_tet(&mut self, tet_type: TetType) {
+        self.current_tet = Tet::new(tet_type, Point2::new(3, 0));
+        self.has_tet = true;
     }
 
     fn hard_drop(&mut self) {
@@ -215,15 +247,21 @@ impl event::EventHandler for Game {
             // Update
         }
 
-        self.fall_timer = match decrement(self.fall_timer, ggez::timer::delta(ctx), self.fall_interval()) {
-            TimerState::Ticking(time) => time,
-            TimerState::Done(time) => {
-                if !self.current_tet.fall(&self.tets) {
-                    self.new_tet();
-                }
-                time
-            },
-        };
+        if self.has_tet {
+            self.fall_timer = match decrement(
+                self.fall_timer,
+                ggez::timer::delta(ctx),
+                self.fall_interval()
+            ) {
+                TimerState::Ticking(time) => time,
+                TimerState::Done(time) => {
+                    if !self.current_tet.fall(&self.tets) {
+                        self.new_tet();
+                    }
+                    time
+                },
+            };
+        }
 
         Ok(())
     }
@@ -231,15 +269,23 @@ impl event::EventHandler for Game {
     fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymod: KeyMods, repeat: bool) {
         match keycode {
             KeyCode::Escape => event::quit(ctx),
-            KeyCode::Left => self.current_tet.move_left(&self.tets),
-            KeyCode::Right => self.current_tet.move_right(&self.tets),
-            KeyCode::Up => self.hard_drop(),
+            KeyCode::Left if self.has_tet => self.current_tet.move_left(&self.tets),
+            KeyCode::Right if self.has_tet => self.current_tet.move_right(&self.tets),
+            KeyCode::Up if self.has_tet => self.current_tet.rotate_c(&self.tets),
+            KeyCode::Space if self.has_tet => self.hard_drop(),
             KeyCode::Down => {
                 if !repeat {
                     self.fall_mode = Mode::SoftDrop;
                     self.fall_timer = Duration::from_secs(0);
                 }
             },
+            KeyCode::I if !self.has_tet => self.spawn_tet(TetType::I),
+            KeyCode::J if !self.has_tet => self.spawn_tet(TetType::J),
+            KeyCode::L if !self.has_tet => self.spawn_tet(TetType::L),
+            KeyCode::O if !self.has_tet => self.spawn_tet(TetType::O),
+            KeyCode::S if !self.has_tet => self.spawn_tet(TetType::S),
+            KeyCode::T if !self.has_tet => self.spawn_tet(TetType::T),
+            KeyCode::Z if !self.has_tet => self.spawn_tet(TetType::Z),
             _ => ()
         }
     }
@@ -261,7 +307,7 @@ impl event::EventHandler for Game {
                         ctx,
                         &self.assets.block_sprites[&block],
                         DrawParam::default()
-                            .dest(Point2::new(
+                            .dest(Point2f32::new(
                                 TILE_SIZE * x as f32,
                                 TILE_SIZE * y as f32,
                             ))
@@ -274,7 +320,7 @@ impl event::EventHandler for Game {
                 ctx,
                 &self.assets.block_sprites[&self.current_tet.tet_type],
                 DrawParam::default()
-                    .dest(Point2::new(
+                    .dest(Point2f32::new(
                         TILE_SIZE * (self.current_tet.pos.x + block.x) as f32,
                         TILE_SIZE * (self.current_tet.pos.y + block.y) as f32,
                     ))
