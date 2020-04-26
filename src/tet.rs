@@ -91,26 +91,36 @@ impl Tet {
     }
 
     pub fn rotate_c(&mut self, tets: &Tets) {
-        // TODO: check if can rotate
-        // if not, kick?
-        match self.tet_type {
-            TetType::O => (),
+        if let TetType::O = self.tet_type {
+            return;
+        }
+        let moved_blocks: Vec<_> = match self.tet_type {
             TetType::I => {
                 // rotate around center of a 4x4
-                for block in self.blocks.iter_mut() {
-                    let y = block.x;
-                    block.x = (3 - block.y as i8).abs() as i8;
-                    block.y = y;
-                }
+                self.blocks.iter().map(|block| {
+                    Point2::new((3 - block.y as i8).abs() as i8, block.x)
+                }).collect()
             },
             _ => {
                 // rotate around center of a 3x3
-                for block in self.blocks.iter_mut() {
-                    let y = block.x;
-                    block.x = (2 - block.y as i8).abs() as i8;
-                    block.y = y;
-                }
+                self.blocks.iter().map(|block| {
+                    Point2::new((2 - block.y as i8).abs() as i8, block.x)
+                }).collect()
+            },
+        };
+        // check for collisions/blocks past edge of screen
+        // TODO: we might not need to be so comprehensive
+        // TODO: kicking
+        for block in &moved_blocks {
+            let x = self.pos.x + block.x;
+            let y = self.pos.y + block.y;
+            if x < 0 || x >= game::TILES_WIDE as i8 || y >= game::TILES_HIGH as i8 ||
+                tets.at(y, x).is_some() {
+                return;
             }
+        }
+        for (i, block) in moved_blocks.iter().enumerate() {
+            self.blocks[i] = *block;
         }
     }
 }
