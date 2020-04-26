@@ -93,16 +93,17 @@ enum Moving {
 
 pub struct Game {
     assets: Assets,
+    tets: Tets,
     current_tet: Tet,
     has_tet: bool,
-    tets: Tets,
+    next_tet: TetType,
+    held_tet: Option<TetType>,
+    already_held: bool,
     fall_timer: Duration,
     fall_mode: FallMode,
     spawn_timer: Duration,
     move_timer: Duration,
     moving: Moving,
-    held_tet: Option<TetType>,
-    already_held: bool,
 }
 
 impl Game {
@@ -118,19 +119,21 @@ impl Game {
 
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
         let tet_type = rand::random::<TetType>();
+        let next_tet = rand::random::<TetType>();
 
         let game = Self {
             assets: Assets::load(ctx)?,
+            tets: Tets::default(),
             current_tet: Tet::new(tet_type, Point2::new(3, 0)),
             has_tet: true,
-            tets: Tets::default(),
+            next_tet,
+            held_tet: None,
+            already_held: false,
             fall_timer: Self::NORMAL_INTERVAL,
             fall_mode: FallMode::Normal,
             spawn_timer: Self::SPAWN_INTERVAL,
             move_timer: Self::MOVE_WAIT,
             moving: Moving::None,
-            held_tet: None,
-            already_held: false,
         };
 
         Ok(game)
@@ -218,8 +221,8 @@ impl event::EventHandler for Game {
             self.spawn_timer = match decrement(self.spawn_timer, ggez::timer::delta(ctx)) {
                 TimerState::Ticking(time) => time,
                 TimerState::Done => {
-                    let tet_type = rand::random::<TetType>();
-                    self.spawn_tet(tet_type);
+                    self.spawn_tet(self.next_tet);
+                    self.next_tet = rand::random::<TetType>();
                     self.already_held = false;
                     Self::SPAWN_INTERVAL
                 },
@@ -294,8 +297,8 @@ impl event::EventHandler for Game {
                     self.spawn_tet(held_tet);
                 } else {
                     self.held_tet = Some(self.current_tet.tet_type);
-                    let tet_type = rand::random::<TetType>();
-                    self.spawn_tet(tet_type);
+                    self.spawn_tet(self.next_tet);
+                    self.next_tet = rand::random::<TetType>();
                 }
             }
             _ => ()
@@ -363,6 +366,18 @@ impl event::EventHandler for Game {
             ].into(),
             graphics::WHITE,
         )?;
+        let offset = self.next_tet.center_4x4();
+        for block in self.next_tet.blocks().iter() {
+            graphics::draw(
+                ctx,
+                &self.assets.block_sprites[&self.next_tet],
+                DrawParam::default()
+                    .dest(Point2f32::new(
+                        20.0 + TILE_SIZE * (SIDEBAR_WIDTH + TILES_WIDE as f32 + block.x as f32 + offset.x),
+                        40.0 + TILE_SIZE * (block.y as f32 + offset.y)
+                    ))
+            )?;
+        }
 
         graphics::draw(ctx, &play_area, DrawParam::default())?;
         graphics::draw(ctx, &hold_area, DrawParam::default())?;
