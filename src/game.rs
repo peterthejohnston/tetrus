@@ -4,6 +4,7 @@ use std::time::Duration;
 use ggez::{Context, GameResult};
 use ggez::event::{self, KeyCode, KeyMods};
 use ggez::graphics::{self, Color, DrawParam};
+use ggez::input;
 
 use rand;
 
@@ -76,9 +77,15 @@ impl Tets {
 }
 
 #[derive(Debug)]
-enum Mode {
+enum FallMode {
     Normal,
     SoftDrop,
+}
+
+enum Moving {
+    Left,
+    Right,
+    None,
 }
 
 pub struct Game {
@@ -87,8 +94,10 @@ pub struct Game {
     has_tet: bool,
     tets: Tets,
     fall_timer: Duration,
-    fall_mode: Mode,
+    fall_mode: FallMode,
     spawn_timer: Duration,
+    move_timer: Duration,
+    moving: Moving,
 }
 
 impl Game {
@@ -96,6 +105,8 @@ impl Game {
     const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(100);
     // TODO: maybe there is only a wait at the end of a normal/soft drop
     const SPAWN_INTERVAL: Duration = Duration::from_millis(200);
+    const MOVE_WAIT: Duration = Duration::from_millis(525);
+    const MOVE_INTERVAL: Duration = Duration::from_millis(90);
 
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
         let game = Self {
@@ -104,8 +115,10 @@ impl Game {
             has_tet: true,
             tets: Tets::default(),
             fall_timer: Self::NORMAL_INTERVAL,
-            fall_mode: Mode::Normal,
+            fall_mode: FallMode::Normal,
             spawn_timer: Self::SPAWN_INTERVAL,
+            move_timer: Self::MOVE_WAIT,
+            moving: Moving::None,
         };
 
         Ok(game)
@@ -147,8 +160,8 @@ impl Game {
 
     fn fall_interval(&self) -> Duration {
         match self.fall_mode {
-            Mode::Normal => Self::NORMAL_INTERVAL,
-            Mode::SoftDrop => Self::SOFT_DROP_INTERVAL,
+            FallMode::Normal => Self::NORMAL_INTERVAL,
+            FallMode::SoftDrop => Self::SOFT_DROP_INTERVAL,
         }
     }
 }
@@ -204,19 +217,48 @@ impl event::EventHandler for Game {
             };
         }
 
+        match self.moving {
+            Moving::None => (),
+            Moving::Left | Moving::Right => {
+                self.move_timer = match decrement(
+                    self.move_timer,
+                    ggez::timer::delta(ctx),
+                    Self::MOVE_INTERVAL,
+                ) {
+                    TimerState::Ticking(time) => time,
+                    TimerState::Done(time) => {
+                        match self.moving {
+                            Moving::Left => self.current_tet.move_left(&self.tets),
+                            Moving::Right => self.current_tet.move_right(&self.tets),
+                            _ => (),
+                        }
+                        time
+                    },
+                };
+            },
+        }
+
         Ok(())
     }
 
     fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymod: KeyMods, repeat: bool) {
         match keycode {
             KeyCode::Escape => event::quit(ctx),
-            KeyCode::Left if self.has_tet => self.current_tet.move_left(&self.tets),
-            KeyCode::Right if self.has_tet => self.current_tet.move_right(&self.tets),
+            KeyCode::Left if self.has_tet && !repeat => {
+                self.current_tet.move_left(&self.tets);
+                self.moving = Moving::Left;
+                self.move_timer = Self::MOVE_WAIT;
+            },
+            KeyCode::Right if self.has_tet && !repeat => {
+                self.current_tet.move_right(&self.tets);
+                self.moving = Moving::Right;
+                self.move_timer = Self::MOVE_WAIT;
+            },
             KeyCode::Up if self.has_tet => self.current_tet.rotate_c(&self.tets),
             KeyCode::Space if self.has_tet => self.hard_drop(),
             KeyCode::Down => {
                 if !repeat {
-                    self.fall_mode = Mode::SoftDrop;
+                    self.fall_mode = FallMode::SoftDrop;
                     self.fall_timer = Duration::from_secs(0);
                 }
             },
@@ -231,9 +273,15 @@ impl event::EventHandler for Game {
         }
     }
 
-    fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
+    fn key_up_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
         match keycode {
-            KeyCode::Down => self.fall_mode = Mode::Normal,
+            KeyCode::Down => self.fall_mode = FallMode::Normal,
+            KeyCode::Left | KeyCode::Right => {
+                if !input::keyboard::is_key_pressed(ctx, KeyCode::Left) &&
+                   !input::keyboard::is_key_pressed(ctx, KeyCode::Right) {
+                    self.moving = Moving::None;
+                }
+            },
             _ => ()
         }
     }
