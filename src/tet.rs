@@ -3,10 +3,35 @@ use rand::{Rng, distributions::{Distribution, Standard}};
 use crate::game::{self, Tets};
 
 type Point2 = ggez::nalgebra::Point2<i8>;
+type Point2f32 = ggez::nalgebra::Point2<f32>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TetType {
     I, J, L, O, S, T, Z,
+}
+
+impl TetType {
+    pub fn blocks(&self) -> [Point2; 4] {
+        match self {
+            TetType::I => [[0, 1].into(), [1, 1].into(), [2, 1].into(), [3, 1].into()],
+            TetType::J => [[0, 0].into(), [0, 1].into(), [1, 1].into(), [2, 1].into()],
+            TetType::L => [[0, 1].into(), [1, 1].into(), [2, 1].into(), [2, 0].into()],
+            TetType::O => [[0, 0].into(), [0, 1].into(), [1, 0].into(), [1, 1].into()],
+            TetType::S => [[0, 1].into(), [1, 1].into(), [1, 0].into(), [2, 0].into()],
+            TetType::T => [[1, 0].into(), [0, 1].into(), [1, 1].into(), [2, 1].into()],
+            TetType::Z => [[0, 0].into(), [1, 0].into(), [1, 1].into(), [2, 1].into()],
+        }
+    }
+
+    // Offset needed to center the piece in a 4x4 tile size area, in its
+    // initial rotation (used for display in holding and preview areas)
+    pub fn center_4x4(&self) -> Point2f32 {
+        match self {
+            TetType::I => [0.0, 0.5].into(),
+            TetType::O => [1.0, 1.0].into(),
+            _ => [0.5, 1.0].into(),
+        }
+    }
 }
 
 impl Distribution<TetType> for Standard {
@@ -35,15 +60,7 @@ impl Tet {
         Self {
             tet_type,
             pos,
-            blocks: match tet_type {
-                TetType::I => [[0, 1].into(), [1, 1].into(), [2, 1].into(), [3, 1].into()],
-                TetType::J => [[0, 0].into(), [0, 1].into(), [1, 1].into(), [2, 1].into()],
-                TetType::L => [[0, 1].into(), [1, 1].into(), [2, 1].into(), [2, 0].into()],
-                TetType::O => [[0, 0].into(), [0, 1].into(), [1, 0].into(), [1, 1].into()],
-                TetType::S => [[0, 1].into(), [1, 1].into(), [1, 0].into(), [2, 0].into()],
-                TetType::T => [[1, 0].into(), [0, 1].into(), [1, 1].into(), [2, 1].into()],
-                TetType::Z => [[0, 0].into(), [1, 0].into(), [1, 1].into(), [2, 1].into()],
-            }
+            blocks: tet_type.blocks(),
         }
     }
 

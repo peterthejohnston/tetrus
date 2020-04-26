@@ -13,9 +13,12 @@ use crate::tet::{Tet, TetType};
 type Point2f32 = ggez::nalgebra::Point2<f32>;
 type Point2 = ggez::nalgebra::Point2<i8>;
 
-pub const TILE_SIZE: f32 = 20.0;
+const TILE_SIZE: f32 = 20.0;
 pub const TILES_WIDE: usize = 10;
 pub const TILES_HIGH: usize = 20;
+const SIDEBAR_WIDTH: f32 = 6.0;
+pub const WINDOW_WIDTH: f32 = (TILES_WIDE as f32 + SIDEBAR_WIDTH * 2.0) * TILE_SIZE;
+pub const WINDOW_HEIGHT: f32 = TILES_HIGH as f32 * TILE_SIZE;
 
 struct Assets {
     block_sprites: HashMap<TetType, graphics::Image>,
@@ -98,6 +101,8 @@ pub struct Game {
     spawn_timer: Duration,
     move_timer: Duration,
     moving: Moving,
+    held_tet: Option<TetType>,
+    already_held: bool,
 }
 
 impl Game {
@@ -124,6 +129,8 @@ impl Game {
             spawn_timer: Self::SPAWN_INTERVAL,
             move_timer: Self::MOVE_WAIT,
             moving: Moving::None,
+            held_tet: None,
+            already_held: false,
         };
 
         Ok(game)
@@ -213,6 +220,7 @@ impl event::EventHandler for Game {
                 TimerState::Done => {
                     let tet_type = rand::random::<TetType>();
                     self.spawn_tet(tet_type);
+                    self.already_held = false;
                     Self::SPAWN_INTERVAL
                 },
             };
@@ -279,13 +287,17 @@ impl event::EventHandler for Game {
                     self.fall_timer = Duration::from_secs(0);
                 }
             },
-            KeyCode::I if !self.has_tet => self.spawn_tet(TetType::I),
-            KeyCode::J if !self.has_tet => self.spawn_tet(TetType::J),
-            KeyCode::L if !self.has_tet => self.spawn_tet(TetType::L),
-            KeyCode::O if !self.has_tet => self.spawn_tet(TetType::O),
-            KeyCode::S if !self.has_tet => self.spawn_tet(TetType::S),
-            KeyCode::T if !self.has_tet => self.spawn_tet(TetType::T),
-            KeyCode::Z if !self.has_tet => self.spawn_tet(TetType::Z),
+            KeyCode::LShift | KeyCode::RShift if !self.already_held => {
+                self.already_held = true;
+                if let Some(held_tet) = self.held_tet {
+                    self.held_tet = Some(self.current_tet.tet_type);
+                    self.spawn_tet(held_tet);
+                } else {
+                    self.held_tet = Some(self.current_tet.tet_type);
+                    let tet_type = rand::random::<TetType>();
+                    self.spawn_tet(tet_type);
+                }
+            }
             _ => ()
         }
     }
@@ -308,7 +320,53 @@ impl event::EventHandler for Game {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        graphics::clear(ctx, Color::from_rgb(0, 0, 0));
+        graphics::clear(ctx, Color::from_rgb(80, 80, 80));
+
+        let play_area = graphics::Mesh::new_rectangle(
+            ctx,
+            graphics::DrawMode::fill(),
+            [
+                SIDEBAR_WIDTH * TILE_SIZE, 0.0,
+                TILES_WIDE as f32 * TILE_SIZE, TILES_HIGH as f32 * TILE_SIZE
+            ].into(),
+            graphics::BLACK,
+        )?;
+        let hold_area = graphics::Mesh::new_rectangle(
+            ctx,
+            graphics::DrawMode::stroke(2.0),
+            [
+                20.0, 40.0,
+                TILE_SIZE * 4.0, TILE_SIZE * 4.0
+            ].into(),
+            graphics::WHITE,
+        )?;
+        if let Some(held_tet) = self.held_tet {
+            let offset = held_tet.center_4x4();
+            for block in held_tet.blocks().iter() {
+                graphics::draw(
+                    ctx,
+                    &self.assets.block_sprites[&held_tet],
+                    DrawParam::default()
+                        .dest(Point2f32::new(
+                            20.0 + TILE_SIZE * (block.x as f32 + offset.x),
+                            40.0 + TILE_SIZE * (block.y as f32 + offset.y)
+                        ))
+                )?;
+            }
+        }
+        let next_area = graphics::Mesh::new_rectangle(
+            ctx,
+            graphics::DrawMode::stroke(2.0),
+            [
+                (SIDEBAR_WIDTH + TILES_WIDE as f32) * TILE_SIZE + 20.0, 40.0,
+                TILE_SIZE * 4.0, TILE_SIZE * 4.0
+            ].into(),
+            graphics::WHITE,
+        )?;
+
+        graphics::draw(ctx, &play_area, DrawParam::default())?;
+        graphics::draw(ctx, &hold_area, DrawParam::default())?;
+        graphics::draw(ctx, &next_area, DrawParam::default())?;
 
         for (y, row) in self.tets.iter().enumerate() {
             for (x, block) in row.iter().enumerate() {
@@ -318,7 +376,7 @@ impl event::EventHandler for Game {
                         &self.assets.block_sprites[&block],
                         DrawParam::default()
                             .dest(Point2f32::new(
-                                TILE_SIZE * x as f32,
+                                SIDEBAR_WIDTH * TILE_SIZE + TILE_SIZE * x as f32,
                                 TILE_SIZE * y as f32,
                             ))
                     )?;
@@ -333,7 +391,7 @@ impl event::EventHandler for Game {
                     &self.assets.preview_sprite,
                     DrawParam::default()
                         .dest(Point2f32::new(
-                            TILE_SIZE * (preview_tet.pos.x + block.x) as f32,
+                            SIDEBAR_WIDTH * TILE_SIZE + TILE_SIZE * (preview_tet.pos.x + block.x) as f32,
                             TILE_SIZE * (preview_tet.pos.y + block.y) as f32,
                         ))
                 )?;
@@ -344,7 +402,7 @@ impl event::EventHandler for Game {
                     &self.assets.block_sprites[&self.current_tet.tet_type],
                     DrawParam::default()
                         .dest(Point2f32::new(
-                            TILE_SIZE * (self.current_tet.pos.x + block.x) as f32,
+                            SIDEBAR_WIDTH * TILE_SIZE + TILE_SIZE * (self.current_tet.pos.x + block.x) as f32,
                             TILE_SIZE * (self.current_tet.pos.y + block.y) as f32,
                         ))
                 )?;
