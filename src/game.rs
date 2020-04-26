@@ -5,6 +5,8 @@ use ggez::{Context, GameResult};
 use ggez::event::{self, KeyCode, KeyMods};
 use ggez::graphics::{self, Color, DrawParam};
 
+use rand;
+
 use crate::tet::{Tet, TetType};
 
 type Point2f32 = ggez::nalgebra::Point2<f32>;
@@ -86,20 +88,24 @@ pub struct Game {
     tets: Tets,
     fall_timer: Duration,
     fall_mode: Mode,
+    spawn_timer: Duration,
 }
 
 impl Game {
     const NORMAL_INTERVAL: Duration = Duration::from_secs(1);
     const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(100);
+    // TODO: maybe there is only a wait at the end of a normal/soft drop
+    const SPAWN_INTERVAL: Duration = Duration::from_millis(200);
 
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
-        let game = Game {
+        let game = Self {
             assets: Assets::load(ctx)?,
             current_tet: Tet::new(TetType::S, Point2::new(3, 0)),
             has_tet: true,
             tets: Tets::default(),
             fall_timer: Self::NORMAL_INTERVAL,
             fall_mode: Mode::Normal,
+            spawn_timer: Self::SPAWN_INTERVAL,
         };
 
         Ok(game)
@@ -119,7 +125,7 @@ impl Game {
             }
         }
         self.has_tet = false;
-        // TODO: set a timer to spawn new random tet
+        self.spawn_timer = Self::SPAWN_INTERVAL;
     }
 
     fn preview_tet(&self) -> Tet {
@@ -179,6 +185,20 @@ impl event::EventHandler for Game {
                     if !self.current_tet.fall(&self.tets) {
                         self.new_tet();
                     }
+                    time
+                },
+            };
+        } else {
+            self.spawn_timer = match decrement(
+                self.spawn_timer,
+                ggez::timer::delta(ctx),
+                Self::SPAWN_INTERVAL,
+            ) {
+                TimerState::Ticking(time) => time,
+                TimerState::Done(time) => {
+                    let tet_type = rand::random::<TetType>();
+                    self.spawn_tet(tet_type);
+                    self.has_tet = true;
                     time
                 },
             };

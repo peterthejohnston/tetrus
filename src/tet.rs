@@ -1,3 +1,5 @@
+use rand::{Rng, distributions::{Distribution, Standard}};
+
 use crate::game::{self, Tets};
 
 type Point2 = ggez::nalgebra::Point2<i8>;
@@ -5,6 +7,20 @@ type Point2 = ggez::nalgebra::Point2<i8>;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TetType {
     I, J, L, O, S, T, Z,
+}
+
+impl Distribution<TetType> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> TetType {
+        match rng.gen_range(0, 7) {
+            0 => TetType::I,
+            1 => TetType::J,
+            2 => TetType::L,
+            3 => TetType::O,
+            4 => TetType::S,
+            5 => TetType::T,
+            _ => TetType::Z,
+        }
+    }
 }
 
 #[derive(Clone)]
