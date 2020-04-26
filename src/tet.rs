@@ -7,6 +7,7 @@ pub enum TetType {
     I, J, L, O, S, T, Z,
 }
 
+#[derive(Clone)]
 pub struct Tet {
     pub tet_type: TetType,
     pub blocks: [Point2; 4],

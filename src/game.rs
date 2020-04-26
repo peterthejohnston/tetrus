@@ -16,6 +16,7 @@ pub const TILES_HIGH: usize = 20;
 
 struct Assets {
     block_sprites: HashMap<TetType, graphics::Image>,
+    preview_sprite: graphics::Image,
 }
 
 impl Assets {
@@ -28,7 +29,8 @@ impl Assets {
         block_sprites.insert(TetType::S, graphics::Image::new(ctx, "/s.png")?);
         block_sprites.insert(TetType::T, graphics::Image::new(ctx, "/t.png")?);
         block_sprites.insert(TetType::Z, graphics::Image::new(ctx, "/z.png")?);
-        Ok(Assets { block_sprites })
+        let preview_sprite = graphics::Image::new(ctx, "/preview.png")?;
+        Ok(Assets { block_sprites, preview_sprite })
     }
 }
 
@@ -53,8 +55,17 @@ impl Tets {
         self.tets[row as usize][col as usize] = Some(val);
     }
 
+    fn row_full(&self, row: i8) -> bool {
+        self.tets[row as usize].iter().all(|block| block.is_some())
+    }
+
     fn clear(&mut self, row: i8) {
         self.tets[row as usize] = [None; TILES_WIDE];
+        for row in (0..row as usize).rev() {
+            for col in (0..TILES_WIDE).rev() {
+                self.tets[row + 1][col] = self.tets[row][col];
+            }
+        }
     }
 
     fn iter(&self) -> std::slice::Iter<[Option<TetType>; TILES_WIDE]> {
@@ -102,8 +113,19 @@ impl Game {
                 self.current_tet.tet_type
             );
         }
+        for row in 0..TILES_HIGH {
+            if self.tets.row_full(row as i8) {
+                self.tets.clear(row as i8);
+            }
+        }
         self.has_tet = false;
         // TODO: set a timer to spawn new random tet
+    }
+
+    fn preview_tet(&self) -> Tet {
+        let mut preview_tet = self.current_tet.clone();
+        while preview_tet.fall(&self.tets) {}
+        preview_tet
     }
 
     fn spawn_tet(&mut self, tet_type: TetType) {
@@ -214,16 +236,30 @@ impl event::EventHandler for Game {
                 }
             }
         }
-        for block in self.current_tet.blocks.iter() {
-            graphics::draw(
-                ctx,
-                &self.assets.block_sprites[&self.current_tet.tet_type],
-                DrawParam::default()
-                    .dest(Point2f32::new(
-                        TILE_SIZE * (self.current_tet.pos.x + block.x) as f32,
-                        TILE_SIZE * (self.current_tet.pos.y + block.y) as f32,
-                    ))
-            )?;
+        if self.has_tet {
+            let preview_tet = self.preview_tet();
+            for block in preview_tet.blocks.iter() {
+                graphics::draw(
+                    ctx,
+                    &self.assets.preview_sprite,
+                    DrawParam::default()
+                        .dest(Point2f32::new(
+                            TILE_SIZE * (preview_tet.pos.x + block.x) as f32,
+                            TILE_SIZE * (preview_tet.pos.y + block.y) as f32,
+                        ))
+                )?;
+            }
+            for block in self.current_tet.blocks.iter() {
+                graphics::draw(
+                    ctx,
+                    &self.assets.block_sprites[&self.current_tet.tet_type],
+                    DrawParam::default()
+                        .dest(Point2f32::new(
+                            TILE_SIZE * (self.current_tet.pos.x + block.x) as f32,
+                            TILE_SIZE * (self.current_tet.pos.y + block.y) as f32,
+                        ))
+                )?;
+            }
         }
 
         // TODO: FPS
