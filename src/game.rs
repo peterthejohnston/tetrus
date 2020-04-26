@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use ggez::{Context, GameResult};
 use ggez::event::{self, KeyCode, KeyMods};
-use ggez::graphics::{self, Color, DrawParam};
-use ggez::input;
+use ggez::graphics::{self, Color, DrawParam, Text};
+use ggez::timer;
 
 use rand;
 
@@ -102,16 +102,21 @@ pub struct Game {
 
 impl Game {
     const NORMAL_INTERVAL: Duration = Duration::from_secs(1);
+    // TODO: maybe this should shorten depending on the level, or have a total
+    // limit even with resets (piece has to stop eventually)
+    const PAUSE_AT_BOTTOM: Duration = Duration::from_millis(300);
     const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(100);
     // TODO: maybe there is only a wait at the end of a normal/soft drop
     const SPAWN_INTERVAL: Duration = Duration::from_millis(200);
-    const MOVE_WAIT: Duration = Duration::from_millis(525);
+    const MOVE_WAIT: Duration = Duration::from_millis(500);
     const MOVE_INTERVAL: Duration = Duration::from_millis(90);
 
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
+        let tet_type = rand::random::<TetType>();
+
         let game = Self {
             assets: Assets::load(ctx)?,
-            current_tet: Tet::new(TetType::S, Point2::new(3, 0)),
+            current_tet: Tet::new(tet_type, Point2::new(3, 0)),
             has_tet: true,
             tets: Tets::default(),
             fall_timer: Self::NORMAL_INTERVAL,
@@ -168,12 +173,12 @@ impl Game {
 
 enum TimerState {
     Ticking(Duration),
-    Done(Duration),
+    Done,
 }
 
-fn decrement(lhs: Duration, rhs: Duration, reset: Duration) -> TimerState {
+fn decrement(lhs: Duration, rhs: Duration) -> TimerState {
     if lhs < rhs || lhs - rhs == Duration::from_millis(0) {
-        TimerState::Done(reset - (rhs - lhs))
+        TimerState::Done
     } else {
         TimerState::Ticking(lhs - rhs)
     }
@@ -188,31 +193,27 @@ impl event::EventHandler for Game {
         }
 
         if self.has_tet {
-            self.fall_timer = match decrement(
-                self.fall_timer,
-                ggez::timer::delta(ctx),
-                self.fall_interval()
-            ) {
-                TimerState::Ticking(time) => time,
-                TimerState::Done(time) => {
+            match decrement(self.fall_timer, ggez::timer::delta(ctx)) {
+                TimerState::Ticking(time) => self.fall_timer = time,
+                TimerState::Done => {
                     if !self.current_tet.fall(&self.tets) {
                         self.new_tet();
+                    } else {
+                        self.fall_timer = if self.current_tet.at_bottom(&self.tets) {
+                            Self::PAUSE_AT_BOTTOM
+                        } else {
+                            self.fall_interval()
+                        }
                     }
-                    time
                 },
             };
         } else {
-            self.spawn_timer = match decrement(
-                self.spawn_timer,
-                ggez::timer::delta(ctx),
-                Self::SPAWN_INTERVAL,
-            ) {
+            self.spawn_timer = match decrement(self.spawn_timer, ggez::timer::delta(ctx)) {
                 TimerState::Ticking(time) => time,
-                TimerState::Done(time) => {
+                TimerState::Done => {
                     let tet_type = rand::random::<TetType>();
                     self.spawn_tet(tet_type);
-                    self.has_tet = true;
-                    time
+                    Self::SPAWN_INTERVAL
                 },
             };
         }
@@ -220,19 +221,18 @@ impl event::EventHandler for Game {
         match self.moving {
             Moving::None => (),
             Moving::Left | Moving::Right => {
-                self.move_timer = match decrement(
-                    self.move_timer,
-                    ggez::timer::delta(ctx),
-                    Self::MOVE_INTERVAL,
-                ) {
+                self.move_timer = match decrement(self.move_timer, ggez::timer::delta(ctx)) {
                     TimerState::Ticking(time) => time,
-                    TimerState::Done(time) => {
-                        match self.moving {
+                    TimerState::Done => {
+                        let actually_moved = match self.moving {
                             Moving::Left => self.current_tet.move_left(&self.tets),
                             Moving::Right => self.current_tet.move_right(&self.tets),
-                            _ => (),
+                            _ => false,
+                        };
+                        if actually_moved && self.current_tet.at_bottom(&self.tets) {
+                            self.fall_timer = Self::PAUSE_AT_BOTTOM;
                         }
-                        time
+                        Self::MOVE_INTERVAL
                     },
                 };
             },
@@ -245,16 +245,33 @@ impl event::EventHandler for Game {
         match keycode {
             KeyCode::Escape => event::quit(ctx),
             KeyCode::Left if self.has_tet && !repeat => {
-                self.current_tet.move_left(&self.tets);
+                if let Moving::Left = self.moving {
+                    return
+                }
                 self.moving = Moving::Left;
                 self.move_timer = Self::MOVE_WAIT;
+                let moved = self.current_tet.move_left(&self.tets);
+                if moved && self.current_tet.at_bottom(&self.tets) {
+                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                }
             },
             KeyCode::Right if self.has_tet && !repeat => {
-                self.current_tet.move_right(&self.tets);
+                if let Moving::Right = self.moving {
+                    return
+                }
                 self.moving = Moving::Right;
                 self.move_timer = Self::MOVE_WAIT;
+                let moved = self.current_tet.move_right(&self.tets);
+                if moved && self.current_tet.at_bottom(&self.tets) {
+                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                }
             },
-            KeyCode::Up if self.has_tet => self.current_tet.rotate_c(&self.tets),
+            KeyCode::Up if self.has_tet => {
+                let rotated = self.current_tet.rotate_c(&self.tets);
+                if rotated && self.current_tet.at_bottom(&self.tets) {
+                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                }
+            },
             KeyCode::Space if self.has_tet => self.hard_drop(),
             KeyCode::Down => {
                 if !repeat {
@@ -273,12 +290,16 @@ impl event::EventHandler for Game {
         }
     }
 
-    fn key_up_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
+    fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
         match keycode {
             KeyCode::Down => self.fall_mode = FallMode::Normal,
-            KeyCode::Left | KeyCode::Right => {
-                if !input::keyboard::is_key_pressed(ctx, KeyCode::Left) &&
-                   !input::keyboard::is_key_pressed(ctx, KeyCode::Right) {
+            KeyCode::Left => {
+                if let Moving::Left = self.moving {
+                    self.moving = Moving::None;
+                }
+            },
+            KeyCode::Right => {
+                if let Moving::Right = self.moving {
                     self.moving = Moving::None;
                 }
             },
@@ -329,6 +350,14 @@ impl event::EventHandler for Game {
                 )?;
             }
         }
+
+        let fps = timer::fps(ctx);
+        let fps_display = Text::new(format!("FPS: {:.0}", fps));
+        graphics::draw(
+            ctx,
+            &fps_display,
+            (Point2f32::new(10.0, 10.0), graphics::WHITE),
+        )?;
 
         // TODO: FPS
 
