@@ -6,8 +6,6 @@ use ggez::event::{self, KeyCode, KeyMods};
 use ggez::graphics::{self, Color, DrawParam, Text};
 use ggez::timer;
 
-use rand;
-
 use crate::tet::{Tet, TetType};
 
 type Point2f32 = ggez::nalgebra::Point2<f32>;
@@ -96,7 +94,8 @@ pub struct Game {
     tets: Tets,
     current_tet: Tet,
     has_tet: bool,
-    next_tet: TetType,
+    next_batch: [TetType; 7],
+    next_tet: usize, // TODO: iterator?
     held_tet: Option<TetType>,
     already_held: bool,
     fall_timer: Duration,
@@ -110,6 +109,7 @@ impl Game {
     const NORMAL_INTERVAL: Duration = Duration::from_secs(1);
     // TODO: maybe this should shorten depending on the level, or have a total
     // limit even with resets (piece has to stop eventually)
+    // TODO: rename LOCK_DELAY? rename all *_DELAY?
     const PAUSE_AT_BOTTOM: Duration = Duration::from_millis(300);
     const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(100);
     // TODO: maybe there is only a wait at the end of a normal/soft drop
@@ -118,15 +118,15 @@ impl Game {
     const MOVE_INTERVAL: Duration = Duration::from_millis(70);
 
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
-        let tet_type = rand::random::<TetType>();
-        let next_tet = rand::random::<TetType>();
+        let next_batch = TetType::batch();
 
         let game = Self {
             assets: Assets::load(ctx)?,
             tets: Tets::default(),
-            current_tet: Tet::new(tet_type, Point2::new(3, 0)),
+            current_tet: Tet::new(next_batch[0], Point2::new(3, 0)),
             has_tet: true,
-            next_tet,
+            next_batch,
+            next_tet: 1,
             held_tet: None,
             already_held: false,
             fall_timer: Self::NORMAL_INTERVAL,
@@ -221,8 +221,11 @@ impl event::EventHandler for Game {
             self.spawn_timer = match decrement(self.spawn_timer, ggez::timer::delta(ctx)) {
                 TimerState::Ticking(time) => time,
                 TimerState::Done => {
-                    self.spawn_tet(self.next_tet);
-                    self.next_tet = rand::random::<TetType>();
+                    self.spawn_tet(self.next_batch[self.next_tet]);
+                    self.next_tet = (self.next_tet + 1) % 7;
+                    if self.next_tet == 0 {
+                        self.next_batch = TetType::batch();
+                    }
                     self.already_held = false;
                     Self::SPAWN_INTERVAL
                 },
@@ -297,8 +300,11 @@ impl event::EventHandler for Game {
                     self.spawn_tet(held_tet);
                 } else {
                     self.held_tet = Some(self.current_tet.tet_type);
-                    self.spawn_tet(self.next_tet);
-                    self.next_tet = rand::random::<TetType>();
+                    self.spawn_tet(self.next_batch[self.next_tet]);
+                    self.next_tet = (self.next_tet + 1) % 7;
+                    if self.next_tet == 0 {
+                        self.next_batch = TetType::batch();
+                    }
                 }
             }
             _ => ()
@@ -366,11 +372,11 @@ impl event::EventHandler for Game {
             ].into(),
             graphics::WHITE,
         )?;
-        let offset = self.next_tet.center_4x4();
-        for block in self.next_tet.blocks().iter() {
+        let offset = self.next_batch[self.next_tet].center_4x4();
+        for block in self.next_batch[self.next_tet].blocks().iter() {
             graphics::draw(
                 ctx,
-                &self.assets.block_sprites[&self.next_tet],
+                &self.assets.block_sprites[&self.next_batch[self.next_tet]],
                 DrawParam::default()
                     .dest(Point2f32::new(
                         20.0 + TILE_SIZE * (SIDEBAR_WIDTH + TILES_WIDE as f32 + block.x as f32 + offset.x),

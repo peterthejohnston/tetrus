@@ -1,4 +1,4 @@
-use rand::{Rng, distributions::{Distribution, Standard}};
+use rand::seq::SliceRandom;
 
 use crate::game::{self, Tets};
 
@@ -34,17 +34,20 @@ impl TetType {
     }
 }
 
-impl Distribution<TetType> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> TetType {
-        match rng.gen_range(0, 7) {
-            0 => TetType::I,
-            1 => TetType::J,
-            2 => TetType::L,
-            3 => TetType::O,
-            4 => TetType::S,
-            5 => TetType::T,
-            _ => TetType::Z,
-        }
+impl TetType {
+    pub fn batch() -> [TetType; 7] {
+        let mut rng = rand::thread_rng();
+        let mut batch = [
+            TetType::I,
+            TetType::J,
+            TetType::L,
+            TetType::O,
+            TetType::S,
+            TetType::T,
+            TetType::Z
+        ];
+        batch.shuffle(&mut rng);
+        batch
     }
 }
 
