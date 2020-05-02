@@ -113,9 +113,9 @@ impl Game {
     const PAUSE_AT_BOTTOM: Duration = Duration::from_millis(300);
     const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(100);
     // TODO: maybe there is only a wait at the end of a normal/soft drop
-    const SPAWN_INTERVAL: Duration = Duration::from_millis(200);
-    const MOVE_WAIT: Duration = Duration::from_millis(500);
-    const MOVE_INTERVAL: Duration = Duration::from_millis(90);
+    const SPAWN_INTERVAL: Duration = Duration::from_millis(0);
+    const MOVE_WAIT: Duration = Duration::from_millis(300);
+    const MOVE_INTERVAL: Duration = Duration::from_millis(70);
 
     pub fn new(ctx: &mut Context) -> GameResult<Self> {
         let tet_type = rand::random::<TetType>();

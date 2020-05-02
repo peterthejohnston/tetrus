@@ -48,11 +48,54 @@ impl Distribution<TetType> for Standard {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Rot {
+    Zero = 0,
+    R    = 1,
+    Two  = 2,
+    L    = 3,
+}
+
+impl Rot {
+    fn c(&mut self) {
+        *self = match self {
+            Rot::Zero => Rot::R,
+            Rot::R    => Rot::Two,
+            Rot::Two  => Rot::L,
+            Rot::L    => Rot::Zero,
+        }
+    }
+
+    fn cc(&mut self) {
+        *self = match self {
+            Rot::Zero => Rot::L,
+            Rot::R    => Rot::Zero,
+            Rot::Two  => Rot::R,
+            Rot::L    => Rot::Two,
+        }
+    }
+}
+
+const C_KICKS: [[[i8; 2]; 5]; 4] = [
+    [[0, 0], [-1, 0], [-1, -1], [0,  2], [-1,  2]], // 0 -> R
+    [[0, 0], [ 1, 0], [ 1,  1], [0, -2], [ 1, -2]], // R -> 2
+    [[0, 0], [ 1, 0], [ 1, -1], [0,  2], [ 1,  2]], // 2 -> L
+    [[0, 0], [-1, 0], [-1,  1], [0, -2], [-1, -2]], // L -> 0
+];
+
+const C_I_KICKS: [[[i8; 2]; 5]; 4] = [
+    [[0, 0], [-2, 0], [ 1, 0], [-2,  1], [ 1, -2]], // 0 -> R
+    [[0, 0], [-1, 0], [ 2, 0], [-1, -2], [ 2,  1]], // R -> 2
+    [[0, 0], [ 2, 0], [-1, 0], [ 2, -1], [-1,  2]], // 2 -> L
+    [[0, 0], [ 1, 0], [-2, 0], [ 1,  2], [-2, -1]], // L -> 0
+];
+
 #[derive(Clone)]
 pub struct Tet {
     pub tet_type: TetType,
     pub blocks: [Point2; 4],
     pub pos: Point2,
+    rot: Rot,
 }
 
 impl Tet {
@@ -61,6 +104,7 @@ impl Tet {
             tet_type,
             pos,
             blocks: tet_type.blocks(),
+            rot: Rot::Zero,
         }
     }
 
@@ -138,19 +182,33 @@ impl Tet {
             },
         };
         // check for collisions/blocks past edge of screen
-        // TODO: we might not need to be so comprehensive
-        // TODO: kicking
-        for block in &moved_blocks {
-            let x = self.pos.x + block.x;
-            let y = self.pos.y + block.y;
-            if x < 0 || x >= game::TILES_WIDE as i8 || y >= game::TILES_HIGH as i8 ||
-                tets.at(y, x).is_some() {
-                return false;
+        let can_move = |dx: i8, dy: i8| {
+            for block in &moved_blocks {
+                let x = self.pos.x + block.x + dx;
+                let y = self.pos.y + block.y + dy;
+                if x < 0 || x >= game::TILES_WIDE as i8 || y >= game::TILES_HIGH as i8 ||
+                    tets.at(y, x).is_some() {
+                    return false;
+                }
+            }
+            true
+        };
+        let tests = if let TetType::I = self.tet_type { &C_I_KICKS } else { &C_KICKS };
+        for test in tests[self.rot as usize].iter() {
+            if can_move(test[0], test[1]) {
+                for (i, block) in moved_blocks.iter().enumerate() {
+                    self.blocks[i] = *block;
+                }
+                self.pos.x += test[0];
+                self.pos.y += test[1];
+                self.rot.c();
+                return true;
             }
         }
-        for (i, block) in moved_blocks.iter().enumerate() {
-            self.blocks[i] = *block;
-        }
-        true
+        false
+    }
+
+    pub fn rotate_cc(&mut self, _tets: &Tets) -> bool {
+        todo!();
     }
 }
