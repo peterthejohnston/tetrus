@@ -6,6 +6,8 @@ use ggez::event::{self, KeyCode, KeyMods};
 use ggez::graphics::{self, Color, DrawParam, Text};
 use ggez::timer;
 
+use lazy_static::lazy_static;
+
 use crate::tet::{Tet, TetType};
 
 type Point2f32 = ggez::nalgebra::Point2<f32>;
@@ -89,8 +91,18 @@ enum Moving {
     None,
 }
 
+lazy_static! {
+    static ref NORMAL_INTERVALS: Vec<Duration> = (0..20).map(|level|
+        Duration::from_millis(
+            ((0.8 - ((level - 1) as f32 * 0.007)).powi(level - 1) * 1000.0) as u64
+        )
+    ).collect();
+}
+
 pub struct Game {
     assets: Assets,
+    score: usize,
+    lines: usize,
     tets: Tets,
     current_tet: Tet,
     has_tet: bool,
@@ -122,6 +134,8 @@ impl Game {
 
         let game = Self {
             assets: Assets::load(ctx)?,
+            score: 0,
+            lines: 0,
             tets: Tets::default(),
             current_tet: Tet::new(next_batch[0], Point2::new(3, 0)),
             has_tet: true,
@@ -147,10 +161,18 @@ impl Game {
                 self.current_tet.tet_type
             );
         }
+        let mut clears = 0;
         for row in 0..TILES_HIGH {
             if self.tets.row_full(row as i8) {
                 self.tets.clear(row as i8);
+                clears += 1;
             }
+        }
+        if clears > 0 {
+            self.add_score(clears);
+            // Add to lines after score, so score is calculated on pre-clear
+            // level
+            self.lines += clears;
         }
         self.has_tet = false;
         self.spawn_timer = Self::SPAWN_INTERVAL;
@@ -168,16 +190,30 @@ impl Game {
     }
 
     fn hard_drop(&mut self) {
-        while self.current_tet.fall(&self.tets) {}
+        while self.current_tet.fall(&self.tets) { self.score += 2; }
         self.new_tet();
         self.fall_timer = self.fall_interval();
     }
 
     fn fall_interval(&self) -> Duration {
         match self.fall_mode {
-            FallMode::Normal => Self::NORMAL_INTERVAL,
+            FallMode::Normal => NORMAL_INTERVALS[self.level()],
             FallMode::SoftDrop => Self::SOFT_DROP_INTERVAL,
         }
+    }
+
+    fn level(&self) -> usize {
+        1 + self.lines / 10
+    }
+
+    fn add_score(&mut self, line_clears: usize) {
+        self.score += match line_clears {
+            1 => self.level() * 100,
+            2 => self.level() * 300,
+            3 => self.level() * 500,
+            4 => self.level() * 800,
+            _ => 0, // Should never happen
+        };
     }
 }
 
@@ -206,6 +242,9 @@ impl event::EventHandler for Game {
             match decrement(self.fall_timer, ggez::timer::delta(ctx)) {
                 TimerState::Ticking(time) => self.fall_timer = time,
                 TimerState::Done => {
+                    if let FallMode::SoftDrop = self.fall_mode {
+                        self.score += 1;
+                    }
                     if !self.current_tet.fall(&self.tets) {
                         self.new_tet();
                     } else {
@@ -436,6 +475,27 @@ impl event::EventHandler for Game {
             ctx,
             &fps_display,
             (Point2f32::new(10.0, 10.0), graphics::WHITE),
+        )?;
+
+        let lines_display = Text::new(format!("Lines: {}", self.lines));
+        graphics::draw(
+            ctx,
+            &lines_display,
+            (Point2f32::new(10.0, WINDOW_HEIGHT - 25.0), graphics::WHITE),
+        )?;
+
+        let level_display = Text::new(format!("Level: {}", self.level()));
+        graphics::draw(
+            ctx,
+            &level_display,
+            (Point2f32::new(10.0, WINDOW_HEIGHT - 50.0), graphics::WHITE),
+        )?;
+
+        let score_display = Text::new(format!("Score: {}", self.score));
+        graphics::draw(
+            ctx,
+            &score_display,
+            (Point2f32::new(10.0, WINDOW_HEIGHT - 75.0), graphics::WHITE),
         )?;
 
         // TODO: FPS
