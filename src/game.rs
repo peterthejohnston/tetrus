@@ -8,7 +8,7 @@ use ggez::timer;
 
 use lazy_static::lazy_static;
 
-use crate::tet::{Tet, TetType};
+use crate::tet::{Tet, TetType, RotationDir};
 
 type Point2f32 = ggez::nalgebra::Point2<f32>;
 type Point2 = ggez::nalgebra::Point2<i8>;
@@ -364,12 +364,18 @@ impl event::EventHandler for Game {
                     self.fall_timer = Self::PAUSE_AT_BOTTOM;
                 }
             },
-            KeyCode::Up if self.has_tet => {
-                let rotated = self.current_tet.rotate_c(&self.tets);
+            KeyCode::X | KeyCode::Up if self.has_tet => {
+                let rotated = self.current_tet.rotate(RotationDir::Clockwise, &self.tets);
                 if rotated && self.current_tet.at_bottom(&self.tets) {
                     self.fall_timer = Self::PAUSE_AT_BOTTOM;
                 }
             },
+            KeyCode::Z if self.has_tet => {
+                let rotated = self.current_tet.rotate(RotationDir::CounterClockwise, &self.tets);
+                if rotated && self.current_tet.at_bottom(&self.tets) {
+                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                }
+            }
             KeyCode::Space if self.has_tet => self.hard_drop(),
             KeyCode::Down => {
                 if !repeat {

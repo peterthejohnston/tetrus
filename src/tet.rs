@@ -51,6 +51,11 @@ impl TetType {
     }
 }
 
+pub enum RotationDir {
+    Clockwise,
+    CounterClockwise,
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Rot {
     Zero = 0,
@@ -91,6 +96,20 @@ const C_I_KICKS: [[[i8; 2]; 5]; 4] = [
     [[0, 0], [-1, 0], [ 2, 0], [-1, -2], [ 2,  1]], // R -> 2
     [[0, 0], [ 2, 0], [-1, 0], [ 2, -1], [-1,  2]], // 2 -> L
     [[0, 0], [ 1, 0], [-2, 0], [ 1,  2], [-2, -1]], // L -> 0
+];
+
+const CC_KICKS: [[[i8; 2]; 5]; 4] = [
+    [[0, 0], [ 1, 0], [ 1, -1], [0,  2], [ 1,  2]], // 0 -> L
+    [[0, 0], [-1, 0], [-1,  1], [0, -2], [ 1, -2]], // L -> 2
+    [[0, 0], [-1, 0], [-1, -1], [0,  2], [-1,  2]], // 2 -> R
+    [[0, 0], [ 1, 0], [ 1,  1], [0, -2], [ 1, -2]], // R -> 0
+];
+
+const CC_I_KICKS: [[[i8; 2]; 5]; 4] = [
+    [[0, 0], [-1, 0], [ 2, 0], [-1, -2], [ 2,  1]], // 0 -> L
+    [[0, 0], [-2, 0], [ 1, 0], [-2,  1], [ 1, -2]], // L -> 2
+    [[0, 0], [ 1, 0], [-2, 0], [ 1,  2], [-2, -1]], // 2 -> R
+    [[0, 0], [ 2, 0], [-1, 0], [ 2, -1], [-1,  2]], // R -> 0
 ];
 
 #[derive(Clone)]
@@ -166,24 +185,48 @@ impl Tet {
         true
     }
 
-    pub fn rotate_c(&mut self, tets: &Tets) -> bool {
+    fn rotate_blocks(&self, dir: &RotationDir) -> Vec<Point2> {
+        match dir {
+            RotationDir::Clockwise => {
+                match self.tet_type {
+                    TetType::I => {
+                        // rotate around center of a 4x4
+                        self.blocks.iter().map(|block| {
+                            Point2::new((3 - block.y as i8).abs() as i8, block.x)
+                        }).collect()
+                    }
+                    _ => {
+                        // rotate around center of a 3x3
+                        self.blocks.iter().map(|block| {
+                            Point2::new((2 - block.y as i8).abs() as i8, block.x)
+                        }).collect()
+                    }
+                }
+            }
+            RotationDir::CounterClockwise => {
+                match self.tet_type {
+                    TetType::I => {
+                        // rotate around center of a 4x4
+                        self.blocks.iter().map(|block| {
+                            Point2::new(block.y, (3 - block.x as i8).abs() as i8)
+                        }).collect()
+                    }
+                    _ => {
+                        // rotate around center of a 3x3
+                        self.blocks.iter().map(|block| {
+                            Point2::new(block.y, (2 - block.x as i8).abs() as i8)
+                        }).collect()
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn rotate(&mut self, dir: RotationDir, tets: &Tets) -> bool {
         if let TetType::O = self.tet_type {
             return true;
         }
-        let moved_blocks: Vec<_> = match self.tet_type {
-            TetType::I => {
-                // rotate around center of a 4x4
-                self.blocks.iter().map(|block| {
-                    Point2::new((3 - block.y as i8).abs() as i8, block.x)
-                }).collect()
-            },
-            _ => {
-                // rotate around center of a 3x3
-                self.blocks.iter().map(|block| {
-                    Point2::new((2 - block.y as i8).abs() as i8, block.x)
-                }).collect()
-            },
-        };
+        let moved_blocks = self.rotate_blocks(&dir);
         // check for collisions/blocks past edge of screen
         let can_move = |dx: i8, dy: i8| {
             for block in &moved_blocks {
@@ -196,7 +239,14 @@ impl Tet {
             }
             true
         };
-        let tests = if let TetType::I = self.tet_type { &C_I_KICKS } else { &C_KICKS };
+        let tests = match dir {
+            RotationDir::Clockwise => {
+                if let TetType::I = self.tet_type { &C_I_KICKS } else { &C_KICKS }
+            }
+            RotationDir::CounterClockwise => {
+                if let TetType::I = self.tet_type { &CC_I_KICKS } else { &CC_KICKS }
+            }
+        };
         for test in tests[self.rot as usize].iter() {
             if can_move(test[0], test[1]) {
                 for (i, block) in moved_blocks.iter().enumerate() {
@@ -209,9 +259,5 @@ impl Tet {
             }
         }
         false
-    }
-
-    pub fn rotate_cc(&mut self, _tets: &Tets) -> bool {
-        todo!();
     }
 }
