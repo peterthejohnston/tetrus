@@ -92,14 +92,21 @@ enum Moving {
 }
 
 lazy_static! {
-    static ref NORMAL_INTERVALS: Vec<Duration> = (0..20).map(|level|
+    static ref NORMAL_INTERVALS: Vec<Duration> = (0..21).map(|level|
         Duration::from_millis(
             ((0.8 - ((level - 1) as f32 * 0.007)).powi(level - 1) * 1000.0) as u64
         )
     ).collect();
 }
 
+enum GameState {
+    Playing,
+    Dead,
+    // Paused,
+}
+
 pub struct Game {
+    state: GameState,
     assets: Assets,
     score: usize,
     lines: usize,
@@ -133,6 +140,7 @@ impl Game {
         let next_batch = TetType::batch();
 
         let game = Self {
+            state: GameState::Playing,
             assets: Assets::load(ctx)?,
             score: 0,
             lines: 0,
@@ -151,6 +159,22 @@ impl Game {
         };
 
         Ok(game)
+    }
+
+    fn restart(&mut self) {
+        self.state = GameState::Playing;
+
+        self.score = 0;
+        self.lines = 0;
+
+        self.tets = Tets::default();
+        self.next_batch = TetType::batch();
+        self.current_tet = Tet::new(self.next_batch[0], Point2::new(3, 0));
+        self.has_tet = true;
+        self.next_tet = 1;
+
+        self.held_tet = None;
+        self.already_held = false;
     }
 
     fn new_tet(&mut self) {
@@ -186,6 +210,15 @@ impl Game {
 
     fn spawn_tet(&mut self, tet_type: TetType) {
         self.current_tet = Tet::new(tet_type, Point2::new(3, 0));
+        for block in self.current_tet.blocks.iter() {
+            if self.tets.at(
+                self.current_tet.pos.y + block.y,
+                self.current_tet.pos.x + block.x
+            ).is_some() {
+                self.state = GameState::Dead;
+                self.has_tet = false;
+            }
+        }
         self.has_tet = true;
     }
 
@@ -203,7 +236,7 @@ impl Game {
     }
 
     fn level(&self) -> usize {
-        1 + self.lines / 10
+        std::cmp::min(1 + self.lines / 10, 20)
     }
 
     fn add_score(&mut self, line_clears: usize) {
@@ -236,6 +269,10 @@ impl event::EventHandler for Game {
 
         while ggez::timer::check_update_time(ctx, DESIRED_FPS) {
             // TODO: update logic in here
+        }
+
+        if let GameState::Dead = self.state {
+            return Ok(())
         }
 
         if self.has_tet {
@@ -295,8 +332,16 @@ impl event::EventHandler for Game {
     }
 
     fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymod: KeyMods, repeat: bool) {
+        if let KeyCode::Escape = keycode {
+            event::quit(ctx);
+        }
+        if let GameState::Dead = self.state {
+            if let KeyCode::R = keycode {
+                self.restart();
+            }
+            return;
+        }
         match keycode {
-            KeyCode::Escape => event::quit(ctx),
             KeyCode::Left if self.has_tet && !repeat => {
                 if let Moving::Left = self.moving {
                     return
@@ -469,6 +514,31 @@ impl event::EventHandler for Game {
             }
         }
 
+        if let GameState::Dead = self.state {
+            let overlay = graphics::Mesh::new_rectangle(
+                ctx,
+                graphics::DrawMode::fill(),
+                [
+                    SIDEBAR_WIDTH * TILE_SIZE, 0.0,
+                    TILES_WIDE as f32 * TILE_SIZE, TILES_HIGH as f32 * TILE_SIZE
+                ].into(),
+                Color::from_rgba(10, 10, 10, 230),
+            )?;
+            graphics::draw(ctx, &overlay, DrawParam::default())?;
+            let score_display = Text::new(format!("Final Score: {}", self.score));
+            graphics::draw(
+                ctx,
+                &score_display,
+                (Point2f32::new(SIDEBAR_WIDTH * TILE_SIZE, 20.0), graphics::WHITE),
+            )?;
+            let score_display = Text::new("Press R to Restart");
+            graphics::draw(
+                ctx,
+                &score_display,
+                (Point2f32::new(SIDEBAR_WIDTH * TILE_SIZE, 40.0), graphics::WHITE),
+            )?;
+        }
+
         let fps = timer::fps(ctx);
         let fps_display = Text::new(format!("FPS: {:.0}", fps));
         graphics::draw(
@@ -497,8 +567,6 @@ impl event::EventHandler for Game {
             &score_display,
             (Point2f32::new(10.0, WINDOW_HEIGHT - 75.0), graphics::WHITE),
         )?;
-
-        // TODO: FPS
 
         graphics::present(ctx)?;
         Ok(())
