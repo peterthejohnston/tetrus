@@ -128,8 +128,7 @@ impl Game {
     const NORMAL_INTERVAL: Duration = Duration::from_secs(1);
     // TODO: maybe this should shorten depending on the level, or have a total
     // limit even with resets (piece has to stop eventually)
-    // TODO: rename LOCK_DELAY? rename all *_DELAY?
-    const PAUSE_AT_BOTTOM: Duration = Duration::from_millis(300);
+    const LOCK_DELAY: Duration = Duration::from_millis(500);
     const SOFT_DROP_INTERVAL: Duration = Duration::from_millis(100);
     // TODO: maybe there is only a wait at the end of a normal/soft drop
     const SPAWN_INTERVAL: Duration = Duration::from_millis(0);
@@ -286,7 +285,7 @@ impl event::EventHandler for Game {
                         self.new_tet();
                     } else {
                         self.fall_timer = if self.current_tet.at_bottom(&self.tets) {
-                            Self::PAUSE_AT_BOTTOM
+                            Self::LOCK_DELAY
                         } else {
                             self.fall_interval()
                         }
@@ -320,7 +319,7 @@ impl event::EventHandler for Game {
                             _ => false,
                         };
                         if actually_moved && self.current_tet.at_bottom(&self.tets) {
-                            self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                            self.fall_timer = Self::LOCK_DELAY;
                         }
                         Self::MOVE_INTERVAL
                     },
@@ -350,7 +349,7 @@ impl event::EventHandler for Game {
                 self.move_timer = Self::MOVE_WAIT;
                 let moved = self.current_tet.move_left(&self.tets);
                 if moved && self.current_tet.at_bottom(&self.tets) {
-                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                    self.fall_timer = Self::LOCK_DELAY;
                 }
             },
             KeyCode::Right if self.has_tet && !repeat => {
@@ -361,19 +360,19 @@ impl event::EventHandler for Game {
                 self.move_timer = Self::MOVE_WAIT;
                 let moved = self.current_tet.move_right(&self.tets);
                 if moved && self.current_tet.at_bottom(&self.tets) {
-                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                    self.fall_timer = Self::LOCK_DELAY;
                 }
             },
             KeyCode::X | KeyCode::Up if self.has_tet => {
                 let rotated = self.current_tet.rotate(RotationDir::Clockwise, &self.tets);
                 if rotated && self.current_tet.at_bottom(&self.tets) {
-                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                    self.fall_timer = Self::LOCK_DELAY;
                 }
             },
             KeyCode::Z if self.has_tet => {
                 let rotated = self.current_tet.rotate(RotationDir::CounterClockwise, &self.tets);
                 if rotated && self.current_tet.at_bottom(&self.tets) {
-                    self.fall_timer = Self::PAUSE_AT_BOTTOM;
+                    self.fall_timer = Self::LOCK_DELAY;
                 }
             }
             KeyCode::Space if self.has_tet => self.hard_drop(),
@@ -531,17 +530,23 @@ impl event::EventHandler for Game {
                 Color::from_rgba(10, 10, 10, 230),
             )?;
             graphics::draw(ctx, &overlay, DrawParam::default())?;
-            let score_display = Text::new(format!("Final Score: {}", self.score));
+            let mut score_display = Text::new(format!("Final Score: {}", self.score));
+            score_display.set_font(graphics::Font::default(), graphics::Scale::uniform(32.0));
+            let offset = score_display.width(ctx) as f32 / 2.0;
             graphics::draw(
                 ctx,
                 &score_display,
-                (Point2f32::new(SIDEBAR_WIDTH * TILE_SIZE, 20.0), graphics::WHITE),
+                (Point2f32::new((SIDEBAR_WIDTH + TILES_WIDE as f32 / 2.0) * TILE_SIZE - offset, 170.0),
+                graphics::WHITE),
             )?;
-            let score_display = Text::new("Press R to Restart");
+            let mut restart_display = Text::new("Press R to Restart");
+            restart_display.set_font(graphics::Font::default(), graphics::Scale::uniform(32.0));
+            let offset = restart_display.width(ctx) as f32 / 2.0;
             graphics::draw(
                 ctx,
-                &score_display,
-                (Point2f32::new(SIDEBAR_WIDTH * TILE_SIZE, 40.0), graphics::WHITE),
+                &restart_display,
+                (Point2f32::new((SIDEBAR_WIDTH + TILES_WIDE as f32 / 2.0) * TILE_SIZE - offset, 210.0),
+                graphics::WHITE),
             )?;
         }
 
